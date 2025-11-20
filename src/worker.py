@@ -11,8 +11,8 @@ class Worker(RabbitMQBroker):
     El Worker consume lotes de trabajo, calcula su parte de Pi, 
     y publica los resultados.
     """
-    def __init__(self, host='localhost'):
-        super().__init__(host=host)
+    def __init__(self, host='localhost', user=None, password=None):
+        super().__init__(host=host, user=user, password=password)
         
         # Identificador único para este worker (para el dashboard)
         self.worker_id = f"worker-{random.randint(1000, 9999)}"
