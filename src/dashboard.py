@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-import pika
 import json
 import numpy as np
 import sys
@@ -9,108 +8,116 @@ import dash
 from dash import dcc, html
 from dash.dependencies import Input, Output
 import plotly.graph_objs as go
-import dash_bootstrap_components as dbc # ¡NUEVO!
+import dash_bootstrap_components as dbc # Asegúrate de tener pip install dash-bootstrap-components
 
 from common.broker import RabbitMQBroker
 
-# --- Configuración Global ---
+# --- CONFIGURACIÓN GLOBAL ---
 
-# Estructuras de datos para mantener el estado
 global_stats = {'total_lanzados': 0, 'total_aciertos': 0}
-pi_history = deque(maxlen=200) # Guardar solo los últimos 200 valores de Pi
+pi_history = deque(maxlen=300) 
+# Aumentamos un poco el historial visual
+points_data_green = {'x': deque(maxlen=2000), 'y': deque(maxlen=2000)}
+points_data_red = {'x': deque(maxlen=2000), 'y': deque(maxlen=2000)}
 
-# Deque (cola de doble extremo) es súper eficiente.
-# Limitamos los puntos en el scatter plot a 2000 para que la web no se sature.
-# ¡CAMBIO! Separamos los puntos por color para un renderizado más robusto.
-points_data_green = {'x': deque(maxlen=1000), 'y': deque(maxlen=1000)}
-points_data_red = {'x': deque(maxlen=1000), 'y': deque(maxlen=1000)}
-
-# Conexión global a RabbitMQ
+# Conexión a RabbitMQ
 try:
-    broker = RabbitMQBroker()
+    broker = RabbitMQBroker() # Recuerda configurar user/pass si es necesario aquí
     broker.connect()
     broker.declare_queue('cola_resultados', durable=True)
     broker.declare_queue('cola_puntos_visuales', durable=True)
     global_channel = broker.channel
 except Exception as e:
-    print(f"❌ Error fatal al conectar con RabbitMQ: {e}")
+    print(f"❌ Error fatal RabbitMQ: {e}")
     sys.exit(1)
 
-# --- Aplicación Dash ---
+# --- ESTILOS Y TEMA ---
+# Usamos el tema CYBORG (Negro y Azul Neón)
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.CYBORG])
+app.title = "Montecarlo Pi Distributed"
 
-# ¡CAMBIO! Usamos un tema profesional de Bootstrap (DARKLY)
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY])
-app.title = "Dashboard Montecarlo Pi"
+# --- COMPONENTES VISUALES (KPI CARDS) ---
+def create_card(title, id_value, color="primary"):
+    return dbc.Card(
+        dbc.CardBody([
+            html.H6(title, className="card-title text-muted"),
+            html.H2("0", id=id_value, className=f"text-{color} font-weight-bold")
+        ]),
+        className="mb-3 shadow-sm" # Sombra suave
+    )
 
-# ¡CAMBIO! Layout rehecho con Bootstrap (Contenedores, Filas, Columnas)
-app.layout = dbc.Container(fluid=True, children=[
-    dbc.Row(dbc.Col(html.H1(
-        children='Simulación Montecarlo Distribuida - Cálculo de π',
-        className="text-center text-light my-4" # Clases de Bootstrap
-    ))),
-
+# --- LAYOUT PRINCIPAL ---
+app.layout = dbc.Container(fluid=True, className="p-4", children=[
+    
+    # 1. Encabezado
     dbc.Row([
-        # Columna Izquierda (Pi y Stats)
-        dbc.Col(width=5, children=[
-            dcc.Graph(id='pi-gauge'),
-            html.H3("Valor de π (convergencia)", className="text-center mt-4"),
-            dcc.Graph(id='pi-convergence-chart'),
-        ]),
-        
-        # Columna Derecha (Scatter Plot)
-        dbc.Col(width=7, children=[
-            html.H3("Muestra de 'Dardos' (Últimos 2000)", className="text-center"),
-            dcc.Graph(id='scatter-plot', style={'height': '70vh'}),
-        ]),
+        dbc.Col(html.H2("🧬 Simulación Distribuida: Método Montecarlo", className="text-white"), width=8),
+        dbc.Col(html.H5("Estado: 🟢 Activo", className="text-success text-end"), width=4),
+    ], className="mb-4 border-bottom border-secondary pb-2"),
+
+    # 2. Fila de Métricas (KPIs)
+    dbc.Row([
+        dbc.Col(create_card("Valor Calculado de π", "kpi-pi", "info"), width=4),
+        dbc.Col(create_card("Error Absoluto (%)", "kpi-error", "danger"), width=4),
+        dbc.Col(create_card("Total Dardos Lanzados", "kpi-total", "success"), width=4),
+    ], className="mb-2"),
+
+    # 3. Fila de Gráficos
+    dbc.Row([
+        # Columna Izquierda: El Círculo (Scatter) - EL HÉROE VISUAL
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader("Visualización de Impactos (Muestra en TR)"),
+                dbc.CardBody(dcc.Graph(id='scatter-plot', style={'height': '600px'}))
+            ])
+        ], width=8),
+
+        # Columna Derecha: Convergencia
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader("Convergencia hacia π"),
+                dbc.CardBody(dcc.Graph(id='convergence-plot', style={'height': '250px'}))
+            ], className="mb-3"),
+            
+            dbc.Card([
+                dbc.CardHeader("Información del Sistema"),
+                dbc.CardBody([
+                    html.P("Arquitectura: Productor-Consumidor", className="small"),
+                    html.P("Broker: RabbitMQ", className="small"),
+                    html.P("Nodos Workers: Dinámicos", className="small"),
+                    html.Hr(),
+                    html.P("Objetivo: π ≈ 3.14159265...", className="text-muted small")
+                ])
+            ])
+        ], width=4),
     ]),
 
-    # Componente invisible que actualiza todo cada segundo
-    dcc.Interval(
-        id='interval-component',
-        interval=1*1000, # en milisegundos (1 segundo)
-        n_intervals=0
-    )
+    # Actualizador (3 segundos para estabilidad)
+    dcc.Interval(id='updater', interval=3000, n_intervals=0)
 ])
 
-# --- Lógica de Callbacks (Magia en tiempo real) ---
+# --- LÓGICA ---
 
-def consumir_mensajes_de_rabbitmq():
-    """
-    Función helper para consumir TODOS los mensajes pendientes 
-    de las colas usando basic_get (no bloqueante).
-    """
+def consumir_mensajes():
     global global_stats, pi_history, points_data_green, points_data_red, global_channel
     
-    # 1. Consumir de 'cola_resultados' (Cálculo de Pi)
+    # Consumir Resultados Numéricos
     while True:
-        method_frame, header_frame, body = global_channel.basic_get(
-            queue='cola_resultados', 
-            auto_ack=True
-        )
-        if method_frame is None:
-            break # No hay más mensajes
-
+        method, _, body = global_channel.basic_get('cola_resultados', auto_ack=True)
+        if not method: break
         data = json.loads(body)
         global_stats['total_lanzados'] += data['total_lanzados']
         global_stats['total_aciertos'] += data['total_aciertos']
         
-        # Calcular Pi y añadirlo al historial
         if global_stats['total_lanzados'] > 0:
-            current_pi = 4 * (global_stats['total_aciertos'] / global_stats['total_lanzados'])
-            pi_history.append(current_pi)
+            pi_val = 4 * (global_stats['total_aciertos'] / global_stats['total_lanzados'])
+            pi_history.append(pi_val)
 
-    # 2. Consumir de 'cola_puntos_visuales' (Scatter plot)
+    # Consumir Puntos Visuales
     while True:
-        method_frame, header_frame, body = global_channel.basic_get(
-            queue='cola_puntos_visuales', 
-            auto_ack=True
-        )
-        if method_frame is None:
-            break # No hay más mensajes
-        
+        method, _, body = global_channel.basic_get('cola_puntos_visuales', auto_ack=True)
+        if not method: break
         points = json.loads(body)
-        
-        # ¡CAMBIO! Separamos los puntos en sus listas correspondientes
         for p in points:
             if p['acierto']:
                 points_data_green['x'].append(p['x'])
@@ -119,84 +126,80 @@ def consumir_mensajes_de_rabbitmq():
                 points_data_red['x'].append(p['x'])
                 points_data_red['y'].append(p['y'])
 
-
-# El "Callback" principal que se ejecuta cada segundo
 @app.callback(
-    [Output('pi-gauge', 'figure'),
-     Output('pi-convergence-chart', 'figure'),
-     Output('scatter-plot', 'figure')],
-    [Input('interval-component', 'n_intervals')]
+    [Output('kpi-pi', 'children'),
+     Output('kpi-error', 'children'),
+     Output('kpi-total', 'children'),
+     Output('scatter-plot', 'figure'),
+     Output('convergence-plot', 'figure')],
+    [Input('updater', 'n_intervals')]
 )
-def update_graphics(n):
-    # 1. Vaciar las colas de RabbitMQ y actualizar datos globales
-    consumir_mensajes_de_rabbitmq()
-
-    # 2. Calcular valores actuales
-    current_pi = pi_history[-1] if len(pi_history) > 0 else 0
-    total_dardos = global_stats['total_lanzados']
+def update_dashboard(n):
+    consumir_mensajes()
     
-    # 3. Crear las figuras (gráficos)
-    
-    # Figura 1: El Medidor (Gauge) de Pi
-    # (Este usa un tema 'plotly_dark' para encajar con el fondo)
-    gauge_fig = go.Figure(go.Indicator(
-        mode = "gauge+number",
-        value = current_pi,
-        domain = {'x': [0, 1], 'y': [0, 1]},
-        title = {'text': f'Valor de π (Total dardos: {total_dardos:,})'},
-        gauge = {
-            'axis': {'range': [3.10, 3.18], 'tickwidth': 1},
-            'bar': {'color': "#4CAF50"},
-            'steps' : [
-                {'range': [3.10, 3.14159], 'color': 'gray'},
-                {'range': [3.14159, 3.18], 'color': 'darkgray'}],
-            'threshold' : {'line': {'color': "cyan", 'width': 4}, 'thickness': 0.75, 'value': np.pi}
-        }
-    ))
-    gauge_fig.update_layout(template='plotly_dark')
+    # Cálculos
+    total = global_stats['total_lanzados']
+    current_pi = pi_history[-1] if pi_history else 0
+    real_pi = np.pi
+    error = abs((current_pi - real_pi) / real_pi) * 100 if total > 0 else 0
 
-    # Figura 2: Gráfico de Convergencia
-    line_fig = go.Figure(data=[
-        go.Scatter(y=list(pi_history), mode='lines', line={'color': '#4CAF50'}, name='π Calculado'),
-        go.Scatter(y=[np.pi] * len(pi_history), mode='lines', line={'color': 'cyan', 'dash': 'dash'}, name='π Real')
-    ])
-    line_fig.update_layout(
-        template='plotly_dark',
-        yaxis_range=[3.1, 3.2] # Rango fijo para ver la convergencia
-    )
+    # 1. Formatear KPIs
+    str_pi = f"{current_pi:.6f}"
+    str_error = f"{error:.4f}%"
+    str_total = f"{total:,}"
 
-    # Figura 3: El Scatter Plot (Dardos)
-    # ¡CAMBIO! Creamos dos "trazas" (traces), una para verdes y otra para rojos.
-    # Esto garantiza que los colores y la leyenda funcionen bien.
+    # 2. Gráfico Scatter (El Círculo)
     scatter_fig = go.Figure()
-    
-    scatter_fig.add_trace(go.Scattergl( # Puntos ROJOS
-        x=list(points_data_red['x']),
-        y=list(points_data_red['y']),
-        mode='markers', name='Falla (Fuera)',
-        marker=dict(color='red', size=2, opacity=0.5)
+    # Puntos Rojos (Fondo)
+    scatter_fig.add_trace(go.Scattergl(
+        x=list(points_data_red['x']), y=list(points_data_red['y']),
+        mode='markers', name='Fuera',
+        marker=dict(color='#e74c3c', size=3, opacity=0.6) # Rojo suave
     ))
-    
-    scatter_fig.add_trace(go.Scattergl( # Puntos VERDES
-        x=list(points_data_green['x']),
-        y=list(points_data_green['y']),
-        mode='markers', name='Acierto (Dentro)',
-        marker=dict(color='lightgreen', size=2, opacity=0.5)
+    # Puntos Verdes (Círculo)
+    scatter_fig.add_trace(go.Scattergl(
+        x=list(points_data_green['x']), y=list(points_data_green['y']),
+        mode='markers', name='Dentro',
+        marker=dict(color='#2ecc71', size=3, opacity=0.6) # Verde esmeralda
     ))
-    
-    # ¡CAMBIO! Forzamos los ejes de 0 a 1 y el aspecto cuadrado.
+    # Arco del círculo real (Visual aid)
+    x_arc = np.linspace(0, 1, 100)
+    y_arc = np.sqrt(1 - x_arc**2)
+    scatter_fig.add_trace(go.Scatter(
+        x=x_arc, y=y_arc, mode='lines', name='Límite Real',
+        line=dict(color='white', width=2, dash='dash')
+    ))
+
     scatter_fig.update_layout(
         template='plotly_dark',
-        legend_orientation="h",
-        legend=dict(x=0, y=1.1),
-        xaxis=dict(range=[0,1]),
-        yaxis=dict(range=[0,1], scaleanchor="x", scaleratio=1),
+        margin=dict(l=20, r=20, t=20, b=20),
+        xaxis=dict(range=[0, 1], showgrid=False, zeroline=False), # Limpio sin grid
+        yaxis=dict(range=[0, 1], showgrid=False, zeroline=False, scaleanchor="x", scaleratio=1),
+        paper_bgcolor='rgba(0,0,0,0)', # Fondo transparente para mezclarse con la tarjeta
+        plot_bgcolor='rgba(0,0,0,0)',
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
+
+    # 3. Gráfico Convergencia (Línea)
+    line_fig = go.Figure()
+    line_fig.add_trace(go.Scatter(y=list(pi_history), mode='lines', line=dict(color='#3498db', width=2)))
+    # Línea de referencia Pi Real
+    line_fig.add_trace(go.Scatter(
+        y=[np.pi]*len(pi_history), mode='lines', 
+        line=dict(color='#f1c40f', width=1, dash='dot'), name='π Real'
+    ))
     
-    return gauge_fig, line_fig, scatter_fig
+    line_fig.update_layout(
+        template='plotly_dark',
+        margin=dict(l=40, r=20, t=10, b=30),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        showlegend=False,
+        yaxis=dict(range=[3.10, 3.18]) # Zoom en la zona de interés
+    )
 
+    return str_pi, str_error, str_total, scatter_fig, line_fig
 
-# --- Punto de entrada del script ---
 if __name__ == '__main__':
-    print("Iniciando Dashboard. Abre tu navegador en http://localhost:8050")
-    app.run(debug=True, host='0.0.0.0', port=8050)
+    # debug=False para evitar el loop infinito de recarga
+    app.run(debug=False, host='0.0.0.0', port=8050)
