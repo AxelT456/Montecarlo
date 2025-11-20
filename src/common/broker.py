@@ -2,47 +2,34 @@ import pika
 import sys
 
 class RabbitMQBroker:
-    """
-    Clase base para manejar la conexión y el canal de RabbitMQ.
-    """
-    def __init__(self, host='localhost'):
+    def __init__(self, host='localhost', user=None, password=None):
         self.host = host
+        self.user = user
+        self.password = password
         self.connection = None
         self.channel = None
 
     def connect(self):
-        """
-        Establece la conexión y el canal.
-        """
         try:
-            self.connection = pika.BlockingConnection(
-                pika.ConnectionParameters(host=self.host)
-            )
+            # Si hay usuario y contraseña, usarlos
+            if self.user and self.password:
+                credentials = pika.PlainCredentials(self.user, self.password)
+                params = pika.ConnectionParameters(host=self.host, credentials=credentials)
+            else:
+                # Si no, intentar conexión anónima o local (guest)
+                params = pika.ConnectionParameters(host=self.host)
+
+            self.connection = pika.BlockingConnection(params)
             self.channel = self.connection.channel()
-            print(f"✅ Conectado exitosamente a RabbitMQ en '{self.host}'")
-        except pika.exceptions.AMQPConnectionError as e:
-            print(f"❌ ERROR: No se pudo conectar a RabbitMQ en '{self.host}'.")
-            print("Asegúrate de que el servicio esté corriendo (sudo systemctl start rabbitmq-server)")
-            sys.exit(1) # Salir del programa si no hay conexión
+            print(f"✅ Conectado a RabbitMQ en '{self.host}'")
+        except Exception as e:
+            print(f"❌ ERROR conectando a RabbitMQ en '{self.host}': {e}")
+            sys.exit(1)
 
     def close(self):
-        """
-        Cierra la conexión.
-        """
         if self.connection and not self.connection.is_closed:
             self.connection.close()
-            print("Conexión con RabbitMQ cerrada.")
 
     def declare_queue(self, queue_name, durable=True):
-        """
-        Declara una cola (la hace 'durable' por defecto).
-        Durable = la cola sobrevive si RabbitMQ se reinicia.
-        """
-        if not self.channel:
-            print("ERROR: No hay canal. Conéctese primero.")
-            return
-            
-        print(f"Declarando cola: {queue_name}")
-        self.channel.queue_declare(queue=queue_name, durable=durable)
-
-# --- Fin del archivo ---
+        if self.channel:
+            self.channel.queue_declare(queue=queue_name, durable=durable)
