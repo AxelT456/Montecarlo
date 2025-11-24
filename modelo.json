@@ -1,0 +1,17 @@
+{
+  "nombre": "Simulacion de PI (Circulo Completo)",
+  "descripcion": "Calculo de area usando distribucion uniforme en rango [-1, 1]",
+  "variables": [
+    {
+      "nombre": "x",
+      "distribucion": "uniform",
+      "params": [-1, 1]
+    },
+    {
+      "nombre": "y",
+      "distribucion": "uniform",
+      "params": [-1, 1]
+    }
+  ],
+  "funcion_evaluacion": "x**2 + y**2 <= 1"
+}
