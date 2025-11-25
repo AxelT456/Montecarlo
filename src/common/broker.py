@@ -1,29 +1,32 @@
+# src/common/broker.py
 import pika
 import sys
+from common.config import RABBITMQ_HOST, RABBITMQ_USER, RABBITMQ_PASS, RABBITMQ_PORT
 
 class RabbitMQBroker:
-    def __init__(self, host='localhost', user=None, password=None):
-        self.host = host
-        self.user = user
-        self.password = password
+    def __init__(self, host=None, user=None, password=None):
+        # Prioridad: 1. Argumentos pasados manual, 2. Configuración global
+        self.host = host if host else RABBITMQ_HOST
+        self.user = user if user else RABBITMQ_USER
+        self.password = password if password else RABBITMQ_PASS
+        self.port = RABBITMQ_PORT
+        
         self.connection = None
         self.channel = None
 
     def connect(self):
         try:
-            # Si hay usuario y contraseña, usarlos
-            if self.user and self.password:
-                credentials = pika.PlainCredentials(self.user, self.password)
-                params = pika.ConnectionParameters(host=self.host, credentials=credentials)
-            else:
-                # Si no, intentar conexión anónima o local (guest)
-                params = pika.ConnectionParameters(host=self.host)
-
+            credentials = pika.PlainCredentials(self.user, self.password)
+            params = pika.ConnectionParameters(
+                host=self.host, 
+                port=self.port, 
+                credentials=credentials
+            )
             self.connection = pika.BlockingConnection(params)
             self.channel = self.connection.channel()
-            print(f"✅ Conectado a RabbitMQ en '{self.host}'")
+            print(f"✅ [Broker] Conectado a {self.host} ({self.user})")
         except Exception as e:
-            print(f"❌ ERROR conectando a RabbitMQ en '{self.host}': {e}")
+            print(f"❌ [Broker] Error fatal conectando a {self.host}: {e}")
             sys.exit(1)
 
     def close(self):

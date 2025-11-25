@@ -1,76 +1,75 @@
 #!/usr/bin/env python
+# src/productor.py
 import json
 import time
 import sys
 import numpy as np
 import pika
 from common.broker import RabbitMQBroker
+from common.config import (QUEUE_ESCENARIOS, EXCHANGE_MODELO, 
+                           TOTAL_DARDOS, DARDOS_POR_LOTE, TTL_MODELO)
 
 class Productor(RabbitMQBroker):
-    def __init__(self, host='localhost', user=None, password=None):
-        super().__init__(host=host, user=user, password=password)
+    def __init__(self):
+        super().__init__() # Usa config automáticamente
         self.connect()
-        self.declare_queue('cola_escenarios', durable=True)
+        self.declare_queue(QUEUE_ESCENARIOS, durable=True)
         # Exchange Fanout para enviar el modelo a todos los workers
-        self.channel.exchange_declare(exchange='modelo_exchange', exchange_type='fanout')
+        self.channel.exchange_declare(exchange=EXCHANGE_MODELO, exchange_type='fanout')
         self.modelo_config = None
 
     def cargar_modelo(self, archivo_path):
-        with open(archivo_path, 'r') as f:
-            self.modelo_config = json.load(f)
-        print(f"[*] Modelo cargado: {self.modelo_config['nombre']}")
+        try:
+            with open(archivo_path, 'r') as f:
+                self.modelo_config = json.load(f)
+            print(f"[*] Modelo cargado: {self.modelo_config['nombre']}")
+        except FileNotFoundError:
+            print(f"❌ Error: No se encuentra {archivo_path}")
+            sys.exit(1)
 
     def publicar_modelo(self):
-        """Publica el JSON del modelo con TTL (Caducidad)"""
         if not self.modelo_config: return
         
         mensaje = json.dumps(self.modelo_config)
         self.channel.basic_publish(
-            exchange='modelo_exchange',
+            exchange=EXCHANGE_MODELO,
             routing_key='',
             body=mensaje,
             properties=pika.BasicProperties(
-                expiration='60000', # El modelo caduca en 60s si nadie lo lee
+                expiration=TTL_MODELO,
                 delivery_mode=2
             )
         )
         print("[*] Definición del modelo enviada a los workers.")
 
     def generar_valores(self, config_var, n):
-        """Generador de distribuciones extendido"""
         dist = config_var['distribucion']
-        p = config_var['params'] # Lista de parametros
+        p = config_var['params']
         
         if dist == 'uniform':
             return np.random.uniform(p[0], p[1], n)
         elif dist == 'normal':
-            return np.random.normal(p[0], p[1], n) # Media, Desviación Estándar
+            return np.random.normal(p[0], p[1], n)
         elif dist == 'exponential':
-            return np.random.exponential(p[0], n)  # Escala
+            return np.random.exponential(p[0], n)
         elif dist == 'beta':
-            return np.random.beta(p[0], p[1], n)   # Alpha, Beta
+            return np.random.beta(p[0], p[1], n)
         else:
-            print(f"Advertencia: Distribución '{dist}' no reconocida. Usando ceros.")
             return np.zeros(n)
 
-    def iniciar_simulacion(self, total_dardos, dardos_por_lote=50000):
-        if not self.modelo_config:
-            print("❌ Error: Carga el modelo.json primero.")
-            return
+    def iniciar_simulacion(self, total_dardos, dardos_por_lote):
+        if not self.modelo_config: return
 
-        # 1. Enviar la definición del problema a los workers
         self.publicar_modelo()
-        time.sleep(1) # Dar tiempo a que los workers reciban el modelo
+        time.sleep(1) # Espera breve para propagación
 
-        # 2. Generar escenarios
         total_lotes = int(total_dardos // dardos_por_lote)
-        print(f"[*] Generando {total_lotes} lotes basados en '{self.modelo_config['nombre']}'...")
+        print(f"[*] Generando {total_lotes} lotes...")
 
         vars_config = self.modelo_config['variables']
 
         try:
             for i in range(total_lotes):
-                # Generamos datos dinámicamente según el JSON
                 datos_lote = {}
                 for var in vars_config:
                     datos_lote[var['nombre']] = self.generar_valores(var, dardos_por_lote).tolist()
@@ -83,7 +82,7 @@ class Productor(RabbitMQBroker):
 
                 self.channel.basic_publish(
                     exchange='',
-                    routing_key='cola_escenarios',
+                    routing_key=QUEUE_ESCENARIOS,
                     body=json.dumps(mensaje),
                     properties=pika.BasicProperties(delivery_mode=2)
                 )
@@ -99,8 +98,6 @@ class Productor(RabbitMQBroker):
             self.close()
 
 if __name__ == "__main__":
-    # --- CONFIGURACIÓN ---
-    productor = Productor(host='localhost') 
-    
+    productor = Productor()
     productor.cargar_modelo('modelo.json')
-    productor.iniciar_simulacion(total_dardos=5_000_000, dardos_por_lote=20_000)
+    productor.iniciar_simulacion(total_dardos=TOTAL_DARDOS, dardos_por_lote=DARDOS_POR_LOTE)
