@@ -153,11 +153,139 @@ El sistema soporta la **Evaluación Dinámica de Código**. El archivo `modelo.j
 
 > **Nota**: El sistema soporta distribuciones `normal`, `exponential`, `beta`, etc. Cambiar la distribución afectará el resultado geométrico, útil para demostrar el comportamiento estocástico.
 
+## 🎯 Guía Maestra de Configuración
+
+Aquí encontrarás diferentes configuraciones para tu archivo `modelo.json`. Cada una produce un comportamiento visual y matemático diferente.
+
+> **Cómo usar**: Simplemente copia el JSON que desees, pégalo en tu archivo `modelo.json`, guárdalo y ejecuta `python src/productor.py`.
+
+### 1. 🎲 Distribución Uniforme (Cálculo de Pi)
+
+Esta es la configuración estándar. Los "dardos" caen en cualquier lugar del cuadrado con la misma probabilidad.
+
+- **Uso**: Para calcular áreas reales y demostrar el funcionamiento correcto
+- **Parámetros**: `[minimo, maximo]`
+
+```json
+{
+  "nombre": "Calculo de PI (Uniforme)",
+  "variables": [
+    {
+      "nombre": "x",
+      "distribucion": "uniform",
+      "params": [-1, 1]
+    },
+    {
+      "nombre": "y",
+      "distribucion": "uniform",
+      "params": [-1, 1]
+    }
+  ],
+  "funcion_evaluacion": "x**2 + y**2 <= 1"
+}
+```
+
+**📊 En el Dashboard**: Verás un círculo verde completo y perfecto ("Luna llena"). El valor de π será ≈ 3.1416.
+
+---
+
+### 2. 🎯 Distribución Normal (Gaussiana)
+
+Aquí simulamos que el lanzador apunta al centro. La mayoría de los dardos caerán cerca de (0,0).
+
+- **Uso**: Para demostrar distribuciones no uniformes (más realista en biología o física)
+- **Parámetros**: `[media, desviacion_estandar]`
+  - **Media (0)**: El centro del tiro
+  - **Desviación (0.3)**: Qué tanto se dispersan (mientras más bajo, más apretados)
+
+```json
+{
+  "nombre": "Tiro al Blanco (Gaussiana)",
+  "variables": [
+    {
+      "nombre": "x",
+      "distribucion": "normal",
+      "params": [0, 0.3]
+    },
+    {
+      "nombre": "y",
+      "distribucion": "normal",
+      "params": [0, 0.3]
+    }
+  ],
+  "funcion_evaluacion": "x**2 + y**2 <= 1"
+}
+```
+
+**📊 En el Dashboard**: Verás una "mancha" brillante y densa en el centro que se desvanece hacia afuera. Las esquinas del cuadrado estarán vacías (puntos rojos escasos).
+
+---
+
+### 3. 📉  Distribución Exponencial
+
+Los valores se agrupan cerca de cero y decaen rápidamente hacia los positivos.
+
+- **Uso**: Simular tiempos de espera o decaimiento radiactivo
+- **Parámetros**: `[escala]` (usualmente 1.0)
+- **⚠️ Nota**: Esta distribución genera solo valores positivos, así que verás solo el cuadrante superior derecho
+
+```json
+{
+  "nombre": "Decaimiento Exponencial",
+  "variables": [
+    {
+      "nombre": "x",
+      "distribucion": "exponential",
+      "params": [0.5]
+    },
+    {
+      "nombre": "y",
+      "distribucion": "exponential",
+      "params": [0.5]
+    }
+  ],
+  "funcion_evaluacion": "x**2 + y**2 <= 1"
+}
+```
+
+**📊 En el Dashboard**: Verás una concentración muy fuerte en la esquina inferior izquierda (0,0) y puntos dispersos hacia arriba y la derecha.
+
+---
+
+### 4. 🔄 La Distribución Beta
+
+Es una distribución muy flexible acotada entre 0 y 1. Se usa mucho en probabilidad bayesiana.
+
+- **Uso**: Modelar probabilidades o proporciones
+- **Parámetros**: `[alpha, beta]`
+  - Si α=β=0.5: Forma de "U" (muchos en las orillas, pocos en el centro)
+  - Si α=β=2: Forma de campana (parecida a la normal)
+
+```json
+{
+  "nombre": "Distribucion Beta (Valle)",
+  "variables": [
+    {
+      "nombre": "x",
+      "distribucion": "beta",
+      "params": [0.5, 0.5]
+    },
+    {
+      "nombre": "y",
+      "distribucion": "beta",
+      "params": [0.5, 0.5]
+    }
+  ],
+  "funcion_evaluacion": "x**2 + y**2 <= 1"
+}
+```
+
+**📊 En el Dashboard**: Este es muy interesante. Verás muchos puntos pegados a las líneas del 0 y del 1, pero el centro estará más vacío. Solo ocupará el cuadrante superior derecho (0 a 1).
+
 ## 📚 Información del Curso
 
 **Asignatura**: Programación Distribuida Aplicada  
 **Periodo**: Noviembre 2025
-
 
 ## 📧 Contacto
 
